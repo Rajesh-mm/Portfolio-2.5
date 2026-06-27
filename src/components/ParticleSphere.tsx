@@ -357,9 +357,7 @@ const rawX = useTransform(
           position:      "absolute",
           inset:         "10%",
           borderRadius:  "50%",
-          background: isLight
-          ? "radial-gradient(circle, rgba(0,0,0,0.06) 0%, rgba(0,0,0,0.015) 45%, transparent 70%)"
-          : "radial-gradient(circle, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 45%, transparent 70%)",
+          background: "radial-gradient(circle, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 45%, transparent 70%)",
           pointerEvents: "none",
           zIndex:        0,
         }}
