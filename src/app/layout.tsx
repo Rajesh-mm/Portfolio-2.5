@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import CustomCursor  from "@/components/CustomCursor";
+import CustomCursor from "../components/CustomCursor";
 import Nav           from "@/components/Nav";
 import SmoothScroll  from "@/components/SmoothScroll";
 import ThemeProvider from "@/components/ThemeProvider";

@@ -413,3 +413,11 @@ img { image-rendering: -webkit-optimize-contrast; }
     --text-hero: clamp(3rem, 15vw, 5rem);
   }
 }
+
+@media (pointer: fine) {
+  *,
+  *::before,
+  *::after {
+    cursor: none !important;
+  }
+}

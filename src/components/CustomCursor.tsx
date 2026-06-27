@@ -1,143 +1,315 @@
 "use client";
-import { useEffect, useRef } from "react";
 
-/**
- * Premium cursor — production final
- *
- * Dot  (z:9999): 8px accent dot, always visible.
- *   No blend mode — works on every surface: lime buttons, cream cards, dark bg.
- *   Hover: becomes hollow ring (transparent + box-shadow outline).
- *   Theme color from CSS var(--accent); switches via CSS transition.
- *
- * Ring (z:9998): 38px trailing circle.
- *   Lerps at 0.1 factor — smooth lag behind dot.
- *   Stretches directionally on fast movement (velocity squish).
- *   Magnetic pull toward [data-magnetic] elements.
- *   Expands/glows on hover state.
- *
- * States: default → hover → text → click
- * Touch + reduced-motion: cursor hidden, body cursor restored.
- */
+import { useEffect, useRef, useState, useCallback } from "react";
+import { motion, useMotionValue, useSpring } from "framer-motion";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type CursorState = "default" | "button" | "card" | "link" | "text";
+
+interface CursorConfig {
+  outerSize: number;      // px – outer ring diameter
+  dotSize: number;        // px – inner dot diameter
+  outerOpacity: number;
+  dotOpacity: number;
+  blendMode: "normal" | "difference" | "exclusion";
+  label: string;          // optional text inside ring (e.g. "View →")
+  showLabel: boolean;
+}
+
+// ─── State map ────────────────────────────────────────────────────────────────
+
+const STATE_CONFIG: Record<CursorState, CursorConfig> = {
+  default: {
+    outerSize: 36,
+    dotSize: 6,
+    outerOpacity: 0.55,
+    dotOpacity: 1,
+    blendMode: "difference",
+    label: "",
+    showLabel: false,
+  },
+  button: {
+    outerSize: 60,
+    dotSize: 8,
+    outerOpacity: 0.75,
+    dotOpacity: 1,
+    blendMode: "difference",
+    label: "",
+    showLabel: false,
+  },
+  card: {
+    outerSize: 72,
+    dotSize: 0,
+    outerOpacity: 0.65,
+    dotOpacity: 0,
+    blendMode: "normal",
+    label: "View →",
+    showLabel: true,
+  },
+  link: {
+    outerSize: 48,
+    dotSize: 6,
+    outerOpacity: 0.85,
+    dotOpacity: 1,
+    blendMode: "difference",
+    label: "",
+    showLabel: false,
+  },
+  text: {
+    outerSize: 4,
+    dotSize: 2,
+    outerOpacity: 0.4,
+    dotOpacity: 0.7,
+    blendMode: "normal",
+    label: "",
+    showLabel: false,
+  },
+};
+
+// ─── Spring config ────────────────────────────────────────────────────────────
+
+// Outer ring – lazy / trailing feel
+const OUTER_SPRING = { stiffness: 160, damping: 28, mass: 0.6 };
+// Inner dot – snappy
+const DOT_SPRING   = { stiffness: 500, damping: 40, mass: 0.3 };
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Pick the cursor state from an element by walking up the DOM. */
+function resolveState(el: Element | null): CursorState {
+  let node = el;
+  while (node && node !== document.body) {
+    const tag = node.tagName?.toLowerCase();
+    // Project cards (data-cursor="card")
+    if ((node as HTMLElement).dataset?.cursor === "card") return "card";
+    // Buttons
+    if (
+      tag === "button" ||
+      (node as HTMLElement).role === "button" ||
+      (node as HTMLElement).dataset?.cursor === "button"
+    ) return "button";
+    // Links
+    if (tag === "a") return "link";
+    // Editable / text fields
+    if (tag === "input" || tag === "textarea" || tag === "select") return "text";
+    // Explicit override
+    const override = (node as HTMLElement).dataset?.cursor as CursorState | undefined;
+    if (override && STATE_CONFIG[override]) return override;
+
+    node = node.parentElement;
+  }
+  return "default";
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
 export default function CustomCursor() {
-  const dotRef  = useRef<HTMLDivElement>(null);
-  const ringRef = useRef<HTMLDivElement>(null);
+  // Raw mouse position (no spring — used for dot)
+  const rawX = useMotionValue(-100);
+  const rawY = useMotionValue(-100);
+
+  // Springy position for outer ring
+  const springX = useSpring(rawX, OUTER_SPRING);
+  const springY = useSpring(rawY, OUTER_SPRING);
+
+  // Dot gets its own tighter spring so it leads the ring slightly
+  const dotSpringX = useSpring(rawX, DOT_SPRING);
+  const dotSpringY = useSpring(rawY, DOT_SPRING);
+
+  const [state, setState] = useState<CursorState>("default");
+  const [visible, setVisible] = useState(false);
+  const [isDark, setIsDark] = useState(true);
+
+  const stateRef = useRef<CursorState>("default");
+  const rafRef   = useRef<number | null>(null);
+  const latestX  = useRef(-100);
+  const latestY  = useRef(-100);
+
+  // ── Detect dark/light theme ──────────────────────────────────────────────
+
+  const syncTheme = useCallback(() => {
+    const html = document.documentElement;
+    const dark =
+      html.classList.contains("dark") ||
+      html.dataset.theme === "dark" ||
+      window.matchMedia("(prefers-color-scheme: dark)").matches;
+    setIsDark(dark);
+  }, []);
 
   useEffect(() => {
-    if (window.matchMedia("(pointer:coarse)").matches)          return;
-    if (window.matchMedia("(prefers-reduced-motion:reduce)").matches) return;
+    syncTheme();
+    const observer = new MutationObserver(syncTheme);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "data-theme"] });
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    mq.addEventListener("change", syncTheme);
+    return () => {
+      observer.disconnect();
+      mq.removeEventListener("change", syncTheme);
+    };
+  }, [syncTheme]);
 
-    const dot  = dotRef.current!;
-    const ring = ringRef.current!;
+  // ── Mouse move (RAF-throttled) ────────────────────────────────────────────
 
-    let mx = -400, my = -400;
-    let rx = -400, ry = -400;
-    let prevMx = -400, prevMy = -400;
-    let vx = 0,  vy = 0;
-    let magEl: Element | null = null;
-    let hidden = false;
-    let state  = "default";
-    let raf: number;
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      latestX.current = e.clientX;
+      latestY.current = e.clientY;
 
-    const LERP       = 0.095;  // ring lag
-    const VEL_DECAY  = 0.76;   // velocity smoothing
-    const MAX_STRETCH = 0.36;  // max stretch ratio
-    const MAG_PULL   = 0.32;   // magnetic pull (0 = none, 1 = snap)
-
-    /* ── Position ─────────────────────────────────────────── */
-    function onMove(e: MouseEvent) {
-      prevMx = mx; prevMy = my;
-      mx = e.clientX; my = e.clientY;
-      dot.style.transform = `translate(${mx}px,${my}px) translate(-50%,-50%)`;
-      magEl = (e.target as HTMLElement).closest("[data-magnetic]");
-    }
-
-    /* ── RAF: ring lerp + stretch + magnetic ─────────────── */
-    function tick() {
-      vx = vx * VEL_DECAY + (mx - prevMx) * (1 - VEL_DECAY);
-      vy = vy * VEL_DECAY + (my - prevMy) * (1 - VEL_DECAY);
-      prevMx = mx; prevMy = my;
-
-      const speed = Math.sqrt(vx * vx + vy * vy);
-
-      // Magnetic target
-      let tx = mx, ty = my;
-      if (magEl) {
-        const r = magEl.getBoundingClientRect();
-        tx = mx + (r.left + r.width  / 2 - mx) * MAG_PULL;
-        ty = my + (r.top  + r.height / 2 - my) * MAG_PULL;
+      if (!rafRef.current) {
+        rafRef.current = requestAnimationFrame(() => {
+          rawX.set(latestX.current);
+          rawY.set(latestY.current);
+          rafRef.current = null;
+        });
       }
+    };
 
-      rx += (tx - rx) * LERP;
-      ry += (ty - ry) * LERP;
+    const onEnter = () => setVisible(true);
+    const onLeave = () => setVisible(false);
 
-      // Directional stretch
-      let sx = 1, sy = 1, angle = 0;
-      if (speed > 1.5 && !hidden) {
-        const s = Math.min(speed * 0.032, MAX_STRETCH);
-        sx = 1 + s; sy = 1 - s * 0.42;
-        angle = Math.atan2(vy, vx) * (180 / Math.PI);
-      }
-
-      ring.style.transform =
-        `translate(${rx}px,${ry}px) translate(-50%,-50%) ` +
-        `rotate(${angle}deg) scaleX(${sx}) scaleY(${sy})`;
-
-      raf = requestAnimationFrame(tick);
-    }
-
-    /* ── State machine ────────────────────────────────────── */
-    const DOT_C  = ["cursor--hover","cursor--text","cursor--click"];
-    const RING_C = ["cursor-ring--hover","cursor-ring--text"];
-
-    function setState(next: string) {
-      if (next === state) return;
-      state = next;
-      dot.classList.remove(...DOT_C);
-      ring.classList.remove(...RING_C);
-      if (next === "hover") {
-        dot.classList.add("cursor--hover");
-        ring.classList.add("cursor-ring--hover");
-      } else if (next === "text") {
-        dot.classList.add("cursor--text");
-        ring.classList.add("cursor-ring--text");
-      }
-    }
-
-    function onOver(e: MouseEvent) {
-      const t = e.target as HTMLElement;
-      if (t.closest("[data-cursor='text']"))                        { setState("text");  return; }
-      if (t.closest("a,button,[data-hover],input,select,textarea")) { setState("hover"); return; }
-      setState("default");
-    }
-
-    const onDown  = () => dot.classList.add("cursor--click");
-    const onUp    = () => dot.classList.remove("cursor--click");
-    const onLeave = () => { hidden = true;  dot.classList.add("cursor--hidden");    ring.classList.add("cursor--hidden"); };
-    const onEnter = () => { hidden = false; dot.classList.remove("cursor--hidden"); ring.classList.remove("cursor--hidden"); };
-
-    document.addEventListener("mousemove",  onMove,  { passive:true });
-    document.addEventListener("mouseover",  onOver,  { passive:true });
-    document.addEventListener("mousedown",  onDown);
-    document.addEventListener("mouseup",    onUp);
-    document.addEventListener("mouseleave", onLeave);
+    window.addEventListener("mousemove", onMove, { passive: true });
     document.addEventListener("mouseenter", onEnter);
-    raf = requestAnimationFrame(tick);
+    document.addEventListener("mouseleave", onLeave);
 
     return () => {
-      document.removeEventListener("mousemove",  onMove);
-      document.removeEventListener("mouseover",  onOver);
-      document.removeEventListener("mousedown",  onDown);
-      document.removeEventListener("mouseup",    onUp);
-      document.removeEventListener("mouseleave", onLeave);
+      window.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseenter", onEnter);
-      cancelAnimationFrame(raf);
+      document.removeEventListener("mouseleave", onLeave);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
+  }, [rawX, rawY]);
+
+  // ── Hover state detection ─────────────────────────────────────────────────
+
+  useEffect(() => {
+    const onOver = (e: MouseEvent) => {
+      const next = resolveState(e.target as Element);
+      if (next !== stateRef.current) {
+        stateRef.current = next;
+        setState(next);
+      }
+    };
+
+    window.addEventListener("mouseover", onOver, { passive: true });
+    return () => window.removeEventListener("mouseover", onOver);
   }, []);
+
+  // ── Touch / coarse pointer – don't render on mobile ───────────────────────
+
+  const [isFinePointer, setIsFinePointer] = useState(false);
+  useEffect(() => {
+    setIsFinePointer(window.matchMedia("(pointer: fine)").matches);
+  }, []);
+
+  if (!isFinePointer) return null;
+
+  // ── Colors ────────────────────────────────────────────────────────────────
+
+  // In difference blend mode: white on dark bg, white on light bg both invert well.
+  // For "normal" blend (card state) we need an explicit color.
+  const ringColor   = isDark ? "rgba(255,255,255,1)" : "rgba(0,0,0,1)";
+  const dotColor    = isDark ? "rgba(255,255,255,1)" : "rgba(0,0,0,1)";
+  // Card cursor label bg
+  const cardBg      = isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)";
+  const cardBorder  = isDark ? "rgba(255,255,255,0.3)"  : "rgba(0,0,0,0.25)";
+  const labelColor  = isDark ? "rgba(255,255,255,0.95)" : "rgba(0,0,0,0.9)";
+
+  const cfg = STATE_CONFIG[state];
 
   return (
     <>
-      <div ref={dotRef}  className="cursor"      aria-hidden="true" style={{ pointerEvents:"none" }} />
-      <div ref={ringRef} className="cursor-ring" aria-hidden="true" style={{ pointerEvents:"none" }} />
+      {/* ── Outer ring ─────────────────────────────────────────────────── */}
+      <motion.div
+        style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          pointerEvents: "none",
+          zIndex: 99999,
+          mixBlendMode: cfg.blendMode,
+          // Center on cursor
+          x: springX,
+          y: springY,
+          translateX: "-50%",
+          translateY: "-50%",
+          opacity: visible ? cfg.outerOpacity : 0,
+        }}
+        animate={{
+          width:  cfg.outerSize,
+          height: cfg.outerSize,
+        }}
+        transition={{
+          width:  { type: "spring", stiffness: 300, damping: 30 },
+          height: { type: "spring", stiffness: 300, damping: 30 },
+          opacity: { duration: 0.15 },
+        }}
+      >
+        {/* Ring border */}
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            borderRadius: "50%",
+            border: `1.5px solid ${cfg.showLabel ? cardBorder : ringColor}`,
+            backgroundColor: cfg.showLabel ? cardBg : "transparent",
+            backdropFilter: cfg.showLabel ? "blur(4px)" : "none",
+            WebkitBackdropFilter: cfg.showLabel ? "blur(4px)" : "none",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            transition: "border-color 0.2s, background-color 0.2s",
+          }}
+        >
+          {/* Card label */}
+          {cfg.showLabel && (
+            <motion.span
+              initial={{ opacity: 0, scale: 0.7 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.7 }}
+              transition={{ duration: 0.18 }}
+              style={{
+                fontSize: "11px",
+                fontWeight: 500,
+                letterSpacing: "0.04em",
+                color: labelColor,
+                whiteSpace: "nowrap",
+                fontFamily: "inherit",
+                userSelect: "none",
+              }}
+            >
+              {cfg.label}
+            </motion.span>
+          )}
+        </div>
+      </motion.div>
+
+      {/* ── Inner dot ──────────────────────────────────────────────────── */}
+      <motion.div
+        style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          pointerEvents: "none",
+          zIndex: 100000,
+          mixBlendMode: "difference",
+          x: dotSpringX,
+          y: dotSpringY,
+          translateX: "-50%",
+          translateY: "-50%",
+          opacity: visible ? cfg.dotOpacity : 0,
+          backgroundColor: dotColor,
+          borderRadius: "50%",
+        }}
+        animate={{
+          width:  cfg.dotSize,
+          height: cfg.dotSize,
+        }}
+        transition={{
+          width:  { type: "spring", stiffness: 400, damping: 30 },
+          height: { type: "spring", stiffness: 400, damping: 30 },
+        }}
+      />
     </>
   );
 }
