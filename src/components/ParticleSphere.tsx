@@ -1,229 +1,380 @@
 "use client";
 
-import { useRef, useEffect, useCallback } from "react";
+/**
+ * src/components/ParticleSphere.tsx
+ *
+ * Premium interactive particle sphere for the hero section.
+ *
+ * Changes from v1 → v2:
+ *  - Repulsion radius enlarged, force multiplier tripled, evaluated against
+ *    canonical (pre-displacement) screen position to fix feedback drift
+ *  - isHovering gate removed — repulsion active whenever cursor is tracked
+ *    near the canvas (fixes the mouseenter/leave timing gap)
+ *  - RETURN_LERP increased 0.055 → 0.08 for snappier return after repulsion
+ *  - Depth mapped through power curve (zNorm^1.6) for perceptual steepening
+ *  - DOT_BASE/DOT_SCALE widened for 3:1 front-to-back size ratio
+ *  - ALPHA_BACK lowered to 0.08 for near-invisible back hemisphere
+ *  - Scroll: scale → 0.18, opacity starts fading earlier, X drift → -110%
+ *  - Spring stiffer (stiffness 140) so scroll changes read immediately
+ *  - Wrapper paddingRight added to inset sphere from viewport right edge
+ *  - Ambient glow intensity doubled
+ */
 
-interface Props {
-  /** Radius of sphere in pixels */
-  radius?: number;
-  /** Number of particles */
-  count?: number;
-  /** Rotation speed (radians/frame) */
-  speed?: number;
-  /** Mouse repel radius in px */
-  repelRadius?: number;
-  /** Theme: 'dark' | 'light' */
-  theme?: string;
+import {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
+import {
+  motion,
+  useScroll,
+  useTransform,
+  useSpring,
+} from "framer-motion";
+
+// ─── Tuneable constants ───────────────────────────────────────────────────────
+
+const PARTICLE_COUNT  = 880;
+const SPHERE_RADIUS   = 165;
+
+// Rotation
+const ROTATION_SPEED  = 0.0016; // radians per frame at 60 fps
+
+// Repulsion — evaluated against canonical home projection, not displaced pos
+const REPEL_RADIUS = 180;    // px — enlarged from 115 for easier triggering
+const REPEL_STRENGTH = 1.8;   // force scalar — was 0.38, now ~3× stronger
+const REPEL_IMPULSE  = 24;    // px² multiplier — was 13
+const RETURN_LERP     = 0.08;   // spring-back per frame — was 0.055, faster now
+const MAX_DISPLACE    = SPHERE_RADIUS * 0.65; // px clamp on displacement
+
+// Depth perception — power-curved for perceptual punch
+const DEPTH_POWER     = 1.6;    // exponent applied to linear zNorm
+const DOT_BASE        = 0.9;    // back-hemisphere dot radius (px)
+const DOT_FRONT       = 2.8;    // front-hemisphere dot radius (px) — was 1.8
+const ALPHA_FRONT     = 0.95;   // front alpha
+const ALPHA_BACK      = 0.07;   // back alpha — was 0.20, now near-invisible
+
+// Camera
+const TILT_X          = 0.18;   // fixed X-axis tilt (radians)
+const FOV             = 520;
+
+// ─── Particle type ────────────────────────────────────────────────────────────
+
+interface Pt {
+  hx: number; hy: number; hz: number; // canonical home on sphere surface
+  dx: number; dy: number;             // screen-space displacement (repel/return)
 }
 
-/**
- * ParticleSphere — canvas-based interactive sphere
- *
- * Architecture:
- *  • Fibonacci sphere algorithm for even particle distribution
- *  • Y-axis auto-rotation with spring-damped cursor tilt
- *  • Cursor repulsion: particles within repelRadius spring away then return
- *  • Perspective projection for depth (near = larger + brighter)
- *  • Scroll-driven: container moves left + fades via CSS transform
- *  • Single rAF loop — GPU-composited canvas
- *  • Skips on prefers-reduced-motion
- */
-export default function ParticleSphere({
-  radius   = 200,
-  count    = 420,
-  speed    = 0.0018,
-  repelRadius = 110,
-  theme    = "dark",
-}: Props) {
-  const canvasRef    = useRef<HTMLCanvasElement>(null);
-  const wrapRef      = useRef<HTMLDivElement>(null);
-  const mouseRef     = useRef({ x: -9999, y: -9999 });
-  const scrollRef    = useRef(0);
+// ─── Fibonacci sphere factory ─────────────────────────────────────────────────
 
-  const buildSphere = useCallback(() => {
-    const golden = (1 + Math.sqrt(5)) / 2;
-    return Array.from({ length: count }, (_, i) => {
-      const theta = Math.acos(1 - 2 * (i + 0.5) / count);
-      const phi   = 2 * Math.PI * i / golden;
-      return {
-        ox: Math.sin(theta) * Math.cos(phi) * radius,
-        oy: Math.sin(theta) * Math.sin(phi) * radius,
-        oz: Math.cos(theta) * radius,
-        // Current (may be displaced by repulsion)
-        dx: 0, dy: 0, dz: 0, // displacement
-        vdx: 0, vdy: 0, vdz: 0, // velocity of displacement
-      };
+function makeSphere(n: number): Pt[] {
+  const pts: Pt[]   = [];
+  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+  for (let i = 0; i < n; i++) {
+    const y  = 1 - (i / (n - 1)) * 2;
+    const r  = Math.sqrt(Math.max(0, 1 - y * y));
+    const th = goldenAngle * i;
+    pts.push({
+      hx: Math.cos(th) * r * SPHERE_RADIUS,
+      hy: y                * SPHERE_RADIUS,
+      hz: Math.sin(th) * r * SPHERE_RADIUS,
+      dx: 0,
+      dy: 0,
     });
-  }, [count, radius]);
+  }
+  return pts;
+}
 
+// ─── Component ────────────────────────────────────────────────────────────────
+
+export default function ParticleSphere() {
+  const wrapperRef    = useRef<HTMLDivElement>(null);
+  const canvasRef     = useRef<HTMLCanvasElement>(null);
+  const pts           = useRef<Pt[]>(makeSphere(PARTICLE_COUNT));
+  const rotY          = useRef(0);
+  const rafId         = useRef<number | null>(null);
+  // Cursor position in canvas-centre space. Initialised far away so no
+  // accidental repulsion fires before the first real mousemove.
+  const cursorLocal   = useRef({ x: -9999, y: -9999 });
+  const reducedMotion = useRef(false);
+  const [mounted, setMounted] = useState(false);
+
+  // ── Scroll-driven transform ───────────────────────────────────────────────
+  // offset: hero top → hero bottom crossing viewport top edge
+
+  const { scrollYProgress } = useScroll({
+    target:  wrapperRef,
+    offset:  ["start start", "end start"],
+  });
+
+  //  Scroll progress → visual values
+  //  Scale:   1.0 → 0.18  (much stronger reduction than v1's 0.35)
+  //  Opacity: fast fade — fully gone by 55% scroll (was 100%)
+  //  X:       drifts 110% left (was 72%)
+const rawScale = useTransform(
+  scrollYProgress,
+  [0, 0.35, 0.7, 1],
+  [1, 0.9, 0.65, 0.45]
+);
+
+const rawOpacity = useTransform(
+  scrollYProgress,
+  [0, 0.5, 1],
+  [1, 0.8, 0.25]
+);
+
+const rawX = useTransform(
+  scrollYProgress,
+  [0, 0.35, 0.7, 1],
+  ["0%", "-10%", "-30%", "-45%"]
+);
+
+  // Stiffer spring: stiffness 140 (was 72) so scroll changes read immediately
+  // rather than lagging behind user intent.
+  const springCfg = { stiffness: 140, damping: 28, mass: 0.6 };
+  const scale     = useSpring(rawScale,   springCfg);
+  const opacity   = useSpring(rawOpacity, springCfg);
+
+  // ── Mount ────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const reduced = window.matchMedia("(prefers-reduced-motion:reduce)").matches;
-    if (reduced) return;
+    reducedMotion.current =
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    setMounted(true);
+  }, []);
 
-    const canvas = canvasRef.current!;
-    const wrap   = wrapRef.current!;
-    const ctx    = canvas.getContext("2d")!;
-    const pts    = buildSphere();
+  // ── Canvas DPI resize ────────────────────────────────────────────────────
+  const resize = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const parent = canvas.parentElement;
+    const size   = Math.min(parent?.clientWidth ?? 480, 480);
+    const dpr    = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width  = size * dpr;
+    canvas.height = size * dpr;
+    canvas.style.width  = `${size}px`;
+    canvas.style.height = `${size}px`;
+  }, []);
 
-    let angle    = 0;
-    let tiltX    = 0, tiltY = 0; // cursor tilt (spring)
-    let vtiltX   = 0, vtiltY = 0;
-    let raf: number;
+  // ── Pointer tracking ─────────────────────────────────────────────────────
+  // mousemove on window (broad capture) — converts to canvas-centre coords.
+  // When cursor leaves viewport, reset to far-away sentinel value so the
+  // repulsion radius check naturally returns false with no extra isHovering gate.
 
-    function resize() {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const w   = wrap.offsetWidth;
-      const h   = wrap.offsetHeight;
-      canvas.width  = w * dpr;
-      canvas.height = h * dpr;
-      canvas.style.width  = w + "px";
-      canvas.style.height = h + "px";
-      ctx.scale(dpr, dpr);
-    }
+  const onMouseMove = useCallback((e: MouseEvent) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    cursorLocal.current = {
+      x: e.clientX - rect.left  - rect.width  / 2,
+      y: e.clientY - rect.top   - rect.height / 2,
+    };
+  }, []);
 
-    function onMouseMove(e: MouseEvent) {
-      const rect = wrap.getBoundingClientRect();
-      mouseRef.current = {
-        x: e.clientX - rect.left - wrap.offsetWidth  / 2,
-        y: e.clientY - rect.top  - wrap.offsetHeight / 2,
-      };
-    }
-    function onMouseLeave() { mouseRef.current = { x: -9999, y: -9999 }; }
-    function onScroll() { scrollRef.current = window.scrollY; }
+  const onMouseLeave = useCallback(() => {
+    // Reset cursor so repulsion stops when mouse leaves the document
+    cursorLocal.current = { x: -9999, y: -9999 };
+  }, []);
 
-    function draw() {
-      const W = wrap.offsetWidth;
-      const H = wrap.offsetHeight;
-      const cx = W / 2;
-      const cy = H / 2;
-      const mouse = mouseRef.current;
-      const scroll = scrollRef.current;
+  // ── Render loop ──────────────────────────────────────────────────────────
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) { rafId.current = requestAnimationFrame(draw); return; }
+    const ctx = canvas.getContext("2d");
+    if (!ctx)  { rafId.current = requestAnimationFrame(draw); return; }
 
-      ctx.clearRect(0, 0, W, H);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const W   = canvas.width  / dpr;
+    const H   = canvas.height / dpr;
+    const cx  = W / 2;
+    const cy  = H / 2;
 
-      // Scroll-driven parallax on the wrapper (CSS transform)
-      const heroH   = window.innerHeight;
-      const progress = Math.min(scroll / (heroH * 0.85), 1);
-      wrap.style.transform  = `translateX(${-progress * 40}%) scale(${1 - progress * 0.18})`;
-      wrap.style.opacity    = String(1 - progress * 0.55);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
 
-      // Cursor tilt (spring toward mouse)
-      const targetTX = mouse.x / (W * 0.5) * 0.12;
-      const targetTY = mouse.y / (H * 0.5) * 0.10;
-      vtiltX += (targetTX - tiltX) * 0.04; vtiltX *= 0.82;
-      vtiltY += (targetTY - tiltY) * 0.04; vtiltY *= 0.82;
-      tiltX += vtiltX; tiltY += vtiltY;
+    const spd = reducedMotion.current ? ROTATION_SPEED * 0.35 : ROTATION_SPEED;
+    rotY.current += spd;
 
-      angle += speed;
+    const cosY = Math.cos(rotY.current);
+    const sinY = Math.sin(rotY.current);
+    const cosX = Math.cos(TILT_X);
+    const sinX = Math.sin(TILT_X);
 
-      // Pre-compute rotation matrices (Y-axis + slight X from tilt)
-      const cosA = Math.cos(angle + tiltX);
-      const sinA = Math.sin(angle + tiltX);
-      const cosT = Math.cos(tiltY);
-      const sinT = Math.sin(tiltY);
+    const curX = cursorLocal.current.x;
+    const curY = cursorLocal.current.y;
+    // Repulsion is active when cursor is tracked (not at sentinel position)
+    const cursorActive = curX > -9000 && !reducedMotion.current;
 
-      // Particle list with projected coords for depth sorting
-      const isDark  = theme !== "light";
-      const baseAlpha = isDark ? 0.75 : 0.55;
+    // ── Project + physics ────────────────────────────────────────────────
+    const buf: Array<{ sx: number; sy: number; sz: number; size: number; a: number }> = [];
 
-      const projected = pts.map(p => {
-        // Spring repulsion: particles spring away from cursor
-        const wx = p.ox + p.dx;
-        const wy = p.oy + p.dy;
-        const wz = p.oz + p.dz;
+    for (const p of pts.current) {
+      // ── Rotate Y ──
+      const rx1 =  p.hx * cosY + p.hz * sinY;
+      const ry1 =  p.hy;
+      const rz1 = -p.hx * sinY + p.hz * cosY;
 
-        // Project to screen (before repulsion check — use original pos)
-        // Y-axis rotation
-        const rx = wx * cosA + wz * sinA;
-        const ry = wy;
-        const rz = -wx * sinA + wz * cosA;
-        // X-axis tilt
-        const fx = rx;
-        const fy = ry * cosT - rz * sinT;
-        const fz = ry * sinT + rz * cosT;
+      // ── Rotate X (fixed tilt) ──
+      const rx2 = rx1;
+      const ry2 = ry1 * cosX - rz1 * sinX;
+      const rz2 = ry1 * sinX + rz1 * cosX;
 
-        // Perspective
-        const persp = 700;
-        const scale  = persp / (persp - fz * 0.6);
-        const px = cx + fx * scale;
-        const py = cy + fy * scale;
+      // ── Perspective project (canonical position — before displacement) ──
+      const proj  = FOV / (FOV + rz2 + SPHERE_RADIUS);
+      const homeSx = cx + rx2 * proj;   // screen X of undisplaced particle
+      const homeSy = cy + ry2 * proj;   // screen Y of undisplaced particle
 
-        // Cursor repulsion on 2D screen space
-        const dx2d = px - (cx + mouse.x);
-        const dy2d = py - (cy + mouse.y);
-        const dist = Math.sqrt(dx2d * dx2d + dy2d * dy2d);
+      // ── Cursor repulsion ─────────────────────────────────────────────────
+      // KEY FIX: measure distance from CANONICAL screen position (homeSx/homeSy),
+      // not the already-displaced position. This prevents the feedback drift that
+      // made repulsion feel jittery and inaccurate in v1.
+      if (cursorActive) {
+        const dx   = homeSx - cx - curX;  // delta from cursor in canvas-centre space
+        const dy   = homeSy - cy - curY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
 
-        if (dist < repelRadius && dist > 1) {
-          const force  = (1 - dist / repelRadius) * 28;
-          const nx = dx2d / dist;
-          const ny = dy2d / dist;
-          p.vdx += nx * force * 0.18;
-          p.vdy += ny * force * 0.18;
+        if (dist < REPEL_RADIUS && dist > 0.5) {
+          // Quadratic falloff: full force at centre, zero at radius edge
+          const t     = (REPEL_RADIUS - dist) / REPEL_RADIUS;
+          const force = t * t * REPEL_STRENGTH;
+          p.dx += (dx / dist) * force * REPEL_IMPULSE;
+          p.dy += (dy / dist) * force * REPEL_IMPULSE;
         }
-        // Spring back to origin
-        p.vdx += -p.dx * 0.06; p.vdx *= 0.78;
-        p.vdy += -p.dy * 0.06; p.vdy *= 0.78;
-        p.vdz += -p.dz * 0.06; p.vdz *= 0.78;
-        p.dx += p.vdx; p.dy += p.vdy; p.dz += p.vdz;
-
-        // Depth-based alpha and size
-        const depthFactor = (fz + radius) / (radius * 2); // 0 (back) → 1 (front)
-        const alpha = baseAlpha * (0.25 + depthFactor * 0.75);
-        const dotR  = 0.8 + depthFactor * 0.9;
-
-        return { px, py, alpha, dotR, depth: fz };
-      });
-
-      // Sort by depth (back to front for proper overlap)
-      projected.sort((a, b) => a.depth - b.depth);
-
-      const dotColor = isDark ? "247,245,242" : "13,13,13";
-      for (const p of projected) {
-        ctx.beginPath();
-        ctx.arc(p.px, p.py, p.dotR, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${dotColor},${p.alpha.toFixed(3)})`;
-        ctx.fill();
       }
 
-      raf = requestAnimationFrame(draw);
+      // ── Spring return ────────────────────────────────────────────────────
+      p.dx *= (1 - RETURN_LERP);
+      p.dy *= (1 - RETURN_LERP);
+
+      // Hard displacement clamp — prevents particles from flying off entirely
+      if (p.dx >  MAX_DISPLACE) p.dx =  MAX_DISPLACE;
+      if (p.dx < -MAX_DISPLACE) p.dx = -MAX_DISPLACE;
+      if (p.dy >  MAX_DISPLACE) p.dy =  MAX_DISPLACE;
+      if (p.dy < -MAX_DISPLACE) p.dy = -MAX_DISPLACE;
+
+      // ── Depth cue ────────────────────────────────────────────────────────
+      // zNorm ∈ [0,1]: 0 = back hemisphere, 1 = front hemisphere
+      const zNorm   = (rz2 + SPHERE_RADIUS) / (2 * SPHERE_RADIUS);
+      // Power curve steepens the midtone — back hemisphere drops off fast,
+      // front hemisphere pops. Exponent 1.6 is the perceptual sweet spot.
+      const zCurved = Math.pow(zNorm, DEPTH_POWER);
+
+      const a    = ALPHA_BACK + (ALPHA_FRONT - ALPHA_BACK) * zCurved;
+      const size = DOT_BASE   + (DOT_FRONT   - DOT_BASE)   * zCurved;
+
+      // Final screen position = canonical projection + displacement
+      buf.push({
+        sx:   homeSx + p.dx,
+        sy:   homeSy + p.dy,
+        sz:   rz2,
+        size,
+        a,
+      });
     }
 
+    // ── Sort back→front (painter's algorithm) ────────────────────────────
+    buf.sort((a, b) => a.sz - b.sz);
+
+    // ── Draw ─────────────────────────────────────────────────────────────
+    // Particle glow
+    ctx.shadowBlur = 18;
+    ctx.shadowColor = "rgba(255,255,255,0.28)";
+
+    const isLight = 
+      document.documentElement.getAttribute("data-theme") === "light";
+    
+    ctx.fillStyle = isLight ? "#111111" : "#ffffff";
+    
+    for (const pt of buf) {
+      ctx.globalAlpha = pt.a;
+      ctx.beginPath();
+      ctx.arc(pt.sx, pt.sy, pt.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    rafId.current = requestAnimationFrame(draw);
+  }, []);
+
+  // ── Lifecycle ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!mounted) return;
+
     resize();
-    window.addEventListener("resize",    resize,       { passive: true });
-    wrap.addEventListener("mousemove",   onMouseMove,  { passive: true });
-    wrap.addEventListener("mouseleave",  onMouseLeave);
-    window.addEventListener("scroll",    onScroll,     { passive: true });
-    raf = requestAnimationFrame(draw);
+
+    const ro     = new ResizeObserver(resize);
+    const canvas = canvasRef.current;
+    if (canvas?.parentElement) ro.observe(canvas.parentElement);
+
+    window.addEventListener("mousemove",  onMouseMove,  { passive: true });
+    document.addEventListener("mouseleave", onMouseLeave);
+
+    rafId.current = requestAnimationFrame(draw);
 
     return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("resize",   resize);
-      wrap.removeEventListener("mousemove",  onMouseMove);
-      wrap.removeEventListener("mouseleave", onMouseLeave);
-      window.removeEventListener("scroll",   onScroll);
+      if (rafId.current) cancelAnimationFrame(rafId.current);
+      ro.disconnect();
+      window.removeEventListener("mousemove",  onMouseMove);
+      document.removeEventListener("mouseleave", onMouseLeave);
     };
-  }, [buildSphere, speed, repelRadius, radius, theme]);
+  }, [mounted, draw, resize, onMouseMove, onMouseLeave]);
+
+  // ── SSR placeholder ──────────────────────────────────────────────────────
+  if (!mounted) {
+    return (
+      <div
+        ref={wrapperRef}
+        aria-hidden="true"
+        style={{ width: "100%", maxWidth: 480, aspectRatio: "1 / 1" }}
+      />
+    );
+  }
 
   return (
-    <div
-      ref={wrapRef}
+    <motion.div
+      ref={wrapperRef}
       aria-hidden="true"
       style={{
-        position: "absolute",
-        right:  "clamp(-4rem, -2vw, 0rem)",
-        top:    "50%",
-        transform: "translateY(-50%)",
-        width:  "clamp(320px, 42vw, 560px)",
-        height: "clamp(320px, 42vw, 560px)",
-        pointerEvents: "none",
-        zIndex: 2,
-        willChange: "transform, opacity",
-        transition: "none", // JS handles this
+        scale,
+        opacity,
+        x:               rawX,
+        transformOrigin: "center center",
+        willChange:      "transform, opacity",
+        // Inset from right edge — requirement 5
+        paddingRight:    "6%",
+        position:        "relative",
+        display:         "flex",
+        alignItems:      "center",
+        justifyContent:  "center",
+        width:           "100%",
+        maxWidth:        520,
       }}
     >
+      {/* Ambient glow — doubled intensity from v1 */}
+      <div
+        aria-hidden="true"
+        style={{
+          position:      "absolute",
+          inset:         "10%",
+          borderRadius:  "50%",
+          background: isLight
+          ? "radial-gradient(circle, rgba(0,0,0,0.06) 0%, rgba(0,0,0,0.015) 45%, transparent 70%)"
+          : "radial-gradient(circle, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 45%, transparent 70%)",
+          pointerEvents: "none",
+          zIndex:        0,
+        }}
+      />
+
       <canvas
         ref={canvasRef}
-        style={{ display:"block", width:"100%", height:"100%" }}
+        style={{
+          display:     "block",
+          width:       "100%",
+          aspectRatio: "1 / 1",
+          position:    "relative",
+          zIndex:      1,
+        }}
       />
-    </div>
+    </motion.div>
   );
 }

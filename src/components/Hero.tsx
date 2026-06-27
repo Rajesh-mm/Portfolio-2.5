@@ -229,7 +229,8 @@ export default function Hero() {
             borderTop:"1px solid var(--border)",
             paddingBlock:"clamp(0.85rem,1.5vw,1.1rem)",
             transition:"border-color var(--dur-theme) ease",
-            overflow:"hidden",
+            // overflow:"hidden",
+            contain:"layout",
           }}
         >
           <div className="ticker-wrap">
