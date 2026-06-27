@@ -221,16 +221,15 @@ export default function Hero() {
           transition={{ delay:1.05, duration:0.85, ease:EXPO }}
           aria-hidden="true"
           style={{
-            borderTop:"1px solid var(--border)",
-            paddingBlock:"clamp(0.85rem,1.5vw,1.1rem)",
-            transition:"border-color var(--dur-theme) ease",
+          borderTop:"1px solid var(--border)",
+          paddingBlock:"clamp(0.85rem,1.5vw,1.1rem)",
             // overflow:"hidden",
-            contain:"layout",
+            // contain:"layout",
           }}
         >
           <div className="ticker-wrap">
             <div className="ticker-track">
-              {[...SKILLS, ...SKILLS].map((s, i) => (
+              {[...SKILLS, ...SKILLS, ...SKILLS, ...SKILLS].map((s, i) => (
                 <span key={i} style={{
                   display:"inline-flex", alignItems:"center", gap:"0.5rem",
                   paddingInline:"clamp(1.1rem,2vw,1.6rem)", flexShrink:0, whiteSpace:"nowrap",

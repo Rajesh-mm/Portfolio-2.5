@@ -314,67 +314,31 @@ a, button { color: inherit; text-decoration: none; cursor: none; }
 .ticker-wrap {
   overflow: hidden;
   width: 100%;
-  /* Edge fade — softens entry/exit for premium feel */
-  -webkit-mask-image: linear-gradient(
-    to right,
-    transparent 0%,
-    #000 6%,
-    #000 94%,
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    to right,
-    transparent 0%,
-    #000 6%,
-    #000 94%,
-    transparent 100%
-  );
+  /* border: 2px solid red; */
 }
 
 .ticker-track {
   display: flex;
-  flex-shrink: 0;
+  flex-wrap: nowrap;
   width: max-content;
 
-  /*
-    GPU compositing — critical for 60fps on all devices.
-    translateZ(0) forces the browser to promote this element to its own
-    compositor layer BEFORE the animation starts. Without this, the browser
-    may decide to composite lazily, causing the first few frames to render
-    in software (stutter/jump on load) or skip compositing entirely on mobile.
-    backface-visibility:hidden reinforces this on Safari/WebKit.
-  */
-  transform: translateZ(0);
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
+  animation: ticker-scroll 34s linear infinite !important;
 
-  /*
-    will-change:transform — tells the browser to allocate a GPU layer now.
-    Must be set alongside the explicit translateZ(0) above; either alone is
-    insufficient on some Android WebViews.
-  */
-  will-change: transform;
+  position: relative;
+  left: 0;
+}
 
-  /*
-    The animation:
-    • Duration 34s — calibrated for 16 skills at comfortable reading pace.
-    • linear — mandatory for seamless looping; any easing creates a visible
-      acceleration/deceleration at the reset point.
-    • infinite — no end frame. Combined with translateX(-50%) math, there is
-      no reset jump: the end state is visually identical to the start state.
-  */
-  animation: ticker-scroll 34s linear infinite;
+.ticker-track > * {
+  flex-shrink: 0;
 }
 
 @keyframes ticker-scroll {
-  from { transform: translateX(0) translateZ(0); }
-  to   { transform: translateX(-50%) translateZ(0); }
-  /*
-    translateZ(0) in both keyframes ensures the GPU layer stays promoted
-    throughout. Without it, some browsers de-promote the layer mid-animation.
-    -50% works because track width = 2 × content width, so one full copy's
-    width in pixels = exactly 50% of the total track. The seam is invisible.
-  */
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
 }
 
 
