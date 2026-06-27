@@ -106,11 +106,6 @@ export default function Hero() {
       {/* Particle sphere — desktop right side */}
       <div className="sphere-wrap" style={{ position:"absolute", inset:0, pointerEvents:"none" }}>
         <ParticleSphere
-          radius={theme === "light" ? 195 : 200}
-          count={420}
-          speed={0.0016}
-          repelRadius={115}
-          theme={theme}
         />
       </div>
 
