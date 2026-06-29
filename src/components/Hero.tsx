@@ -4,7 +4,6 @@ import { useRef, useEffect, useCallback } from "react";
 import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
 import Link from "next/link";
 import { useTheme } from "./ThemeProvider";
-import ParticleSphere from "./ParticleSphere";
 import HeroSphere    from "@/components/HeroSphere";
 
 const SKILLS = [
@@ -29,7 +28,7 @@ export default function Hero() {
   const my = useMotionValue(0);
 
   const heroRef = useRef<HTMLElement>(null);
-  
+
   // Tuned springs — responsive but calm
   const sx = useSpring(mx, { stiffness:42, damping:20, mass:1.0 });
   const sy = useSpring(my, { stiffness:42, damping:20, mass:1.0 });
@@ -62,12 +61,16 @@ export default function Hero() {
       ref={heroRef}
       aria-label="Hero"
       className="hero-layout"
+      
       style={{
         position:"relative", width:"100%", minHeight:"100svh", background:"var(--bg)",
-        display:"flex", flexDirection:"column", overflow:"hidden",
+        overflow:"hidden",
         transition:"background var(--dur-theme) ease",
       }}
     >
+
+      <HeroSphere heroRef={heroRef} />
+      
       {/* Layer 1: grid lines — slowest */}
       <motion.div
         aria-hidden="true"
@@ -115,11 +118,9 @@ export default function Hero() {
       </div> */}
 
 
-      <HeroSphere heroRef={heroRef} />
-
 
       {/* Main content */}
-      <div style={{
+      <div className="hero-content" style={{
         position:"relative", zIndex:10,
         display:"flex", flexDirection:"column", justifyContent:"space-between",
         minHeight:"100svh", padding:"0 var(--page-x)",
@@ -232,7 +233,7 @@ export default function Hero() {
           style={{
           borderTop:"1px solid var(--border)",
           paddingBlock:"clamp(0.85rem,1.5vw,1.1rem)",
-            // overflow:"hidden",
+            overflow:"Visible",
             // contain:"layout",
           }}
         >
@@ -264,6 +265,8 @@ export default function Hero() {
           </div>
         </motion.div>
       </div>
+
+
 
       <style>{`
         @keyframes dot-pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }

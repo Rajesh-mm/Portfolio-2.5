@@ -127,7 +127,7 @@ export default function HeroSphere({ heroRef }: HeroSphereProps) {
       className="hero-sphere"
       aria-hidden="true"
       style={{
-        x:          xVw,
+        // x:          xVw,
         // Preserve layout flow — x-drift is visual only, doesn't affect layout
         willChange: "transform",
       }}
