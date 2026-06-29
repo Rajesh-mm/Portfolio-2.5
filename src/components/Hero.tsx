@@ -5,12 +5,14 @@ import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
 import Link from "next/link";
 import { useTheme } from "./ThemeProvider";
 import ParticleSphere from "./ParticleSphere";
+import HeroSphere    from "@/components/HeroSphere";
 
 const SKILLS = [
   "User Research","Wireframing","Prototyping","Usability Testing","Interaction Design",
   "Information Architecture","Design Systems","Figma","FigJam","Developer Handoff",
   "Agile","WCAG","B2B Enterprise","E-commerce","AI Interfaces","Component Architecture",
 ];
+
 
 // Deterministic dots — stable SSR/CSR, no hydration mismatch
 const DOTS = Array.from({ length: 150 }, (_, i) => ({
@@ -26,6 +28,8 @@ export default function Hero() {
   const mx = useMotionValue(0);
   const my = useMotionValue(0);
 
+  const heroRef = useRef<HTMLElement>(null);
+  
   // Tuned springs — responsive but calm
   const sx = useSpring(mx, { stiffness:42, damping:20, mass:1.0 });
   const sy = useSpring(my, { stiffness:42, damping:20, mass:1.0 });
@@ -55,8 +59,9 @@ export default function Hero() {
 
   return (
     <section
-      ref={ref}
+      ref={heroRef}
       aria-label="Hero"
+      className="hero-layout"
       style={{
         position:"relative", width:"100%", minHeight:"100svh", background:"var(--bg)",
         display:"flex", flexDirection:"column", overflow:"hidden",
@@ -104,10 +109,14 @@ export default function Hero() {
       />
 
       {/* Particle sphere — desktop right side */}
-      <div className="sphere-wrap" style={{ position:"absolute", inset:0, pointerEvents:"none" }}>
+      {/* <div className="sphere-wrap" style={{ position:"absolute", inset:0, pointerEvents:"none" }}>
         <ParticleSphere
         />
-      </div>
+      </div> */}
+
+
+      <HeroSphere heroRef={heroRef} />
+
 
       {/* Main content */}
       <div style={{

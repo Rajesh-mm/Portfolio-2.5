@@ -5,6 +5,7 @@ import Nav           from "@/components/Nav";
 import SmoothScroll  from "@/components/SmoothScroll";
 import ThemeProvider from "@/components/ThemeProvider";
 import PageLoader    from "@/components/PageLoader";
+import Script from "next/script";
 
 export const metadata: Metadata = {
   title: "Rajesh M Mysoremath — UX Designer",
@@ -23,7 +24,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;0,800;1,600;1,700&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
         <meta name="theme-color" content="#0D0D0D"/>
         {/* Blocking script: set data-theme before first paint — prevents flash */}
-        <script dangerouslySetInnerHTML={{__html:`(function(){try{var t=localStorage.getItem("pf-theme");var p=window.matchMedia("(prefers-color-scheme:light)").matches?"light":"dark";document.documentElement.setAttribute("data-theme",t||p)}catch(e){}})();`}}/>
+        {/* <script dangerouslySetInnerHTML={{__html:`(function(){try{var t=localStorage.getItem("pf-theme");var p=window.matchMedia("(prefers-color-scheme:light)").matches?"light":"dark";document.documentElement.setAttribute("data-theme",t||p)}catch(e){}})();`}}/> */}
       </head>
       <body>
         <ThemeProvider>
