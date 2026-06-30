@@ -27,7 +27,7 @@ export default function WorkSection() {
   const onMove = useCallback((e:React.PointerEvent)=>{
     if(!drag||!strip.current) return;
     const d=sx-e.clientX; if(Math.abs(d)>4) setMoved(true);
-    strip.current.scrollLeft=ss+d*1.2;
+    strip.current.scrollLeft=ss+d*1.6;
   },[drag,sx,ss]);
   const onUp = useCallback(()=>setDrag(false),[]);
 
@@ -36,7 +36,7 @@ export default function WorkSection() {
       style={{background:"var(--bg)",paddingBlock:"var(--section-y)",transition:"background var(--dur-theme) ease"}}>
       <motion.div style={{y:hY,opacity:hO}} className="container">
         <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",
-          flexWrap:"wrap",gap:"1rem",padding:"0 var(--page-x)",marginBottom:"clamp(2.5rem,5vw,4rem)"}}>
+          flexWrap:"wrap",gap:"1rem",marginBottom:"clamp(3rem,6vw,5rem)"}}>
           <div>
             <p className="label" style={{color:"var(--accent)",marginBottom:"0.75rem",transition:"color var(--dur-theme) ease"}}>Selected work</p>
             <h2 className="display-lg" style={{color:"var(--fg)"}}>Case studies</h2>
@@ -47,14 +47,15 @@ export default function WorkSection() {
 
       <div ref={strip} className="h-scroll" role="list" aria-label="Project cards"
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}
-        style={{paddingInline:"var(--page-x)",paddingBlock:"16px",cursor:drag?"grabbing":"grab",userSelect:"none"}}>
-        <div style={{display:"flex",gap:"1.25rem",width:"max-content",alignItems:"stretch"}}>
+        style={{overflowX:"auto", overflowY:"hidden",paddingLeft: "var(--page-x)", paddingRight: "35vw", paddingInline:"var(--page-x)",paddingBlock:"16px",cursor:drag?"grabbing":"grab",userSelect:"none"}}>
+        <div className="container">
+            <div className="container" style={{display:"flex",gap:"1rem",width:"max-content",alignItems:"stretch"}}>
           {projects.map((p,i)=><Card key={p.slug} project={p} index={i} moved={moved}/>)}
           {/* End tile */}
           <motion.div role="listitem"
             initial={{opacity:0,y:24}} whileInView={{opacity:1,y:0}}
             viewport={{once:true}} transition={{duration:0.5,delay:0.35,ease:EASE}}
-            style={{flexShrink:0,width:"clamp(200px,20vw,260px)",height:"clamp(380px,48vw,480px)",
+            style={{flexShrink:0,width:"clamp(340px,26vw,420px)",height:"clamp(500px,52vw,560px)",
               display:"flex",alignItems:"center",justifyContent:"center",borderRadius:"1.25rem",
               border:"1px dashed var(--border-h)",transition:"border-color var(--dur-theme) ease",scrollSnapAlign:"center"}}>
             <Link href="/work" data-hover
@@ -68,6 +69,7 @@ export default function WorkSection() {
             </Link>
           </motion.div>
         </div>
+        </div>
       </div>
       <style>{`.all-arr:hover{transform:scale(1.1)}`}</style>
     </section>
@@ -79,7 +81,7 @@ function Card({project:p,index,moved}:{project:(typeof projects)[0];index:number
   return (
     /* Layout layer: owns dimensions + isolation. Never transformed. */
     <article role="listitem"
-      style={{flexShrink:0,width:"clamp(300px,32vw,380px)",height:"clamp(380px,48vw,480px)",
+      style={{flexShrink:0,width:"clamp(340px,26vw,460px)",height:"clamp(500px,52vw,560px)",
         scrollSnapAlign:"center",isolation:"isolate",position:"relative"}}>
       {/* Entrance layer: whileInView only — separate from hover */}
       <motion.div initial={{opacity:0,y:32}} whileInView={{opacity:1,y:0}}
@@ -102,7 +104,7 @@ function Card({project:p,index,moved}:{project:(typeof projects)[0];index:number
               border:"1px solid",borderColor:hov?"var(--border-h)":"var(--border)",
               background:hov?"var(--bg-card-h)":"var(--bg-card)",
               display:"flex",flexDirection:"column",justifyContent:"space-between",
-              padding:"clamp(1.5rem,3vw,2rem)",
+              padding:"clamp(2rem,3vw,2.5rem)",
               transition:`background ${DUR}s ease,border-color ${DUR}s ease`}}>
               {/* Accent glow — clipped by overflow:hidden */}
               <div aria-hidden="true" style={{position:"absolute",top:0,right:0,
@@ -112,7 +114,7 @@ function Card({project:p,index,moved}:{project:(typeof projects)[0];index:number
                 transition:`opacity ${DUR}s ease`}}/>
               {/* Top */}
               <div>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"1.5rem"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"2rem"}}>
                   <span className="label-sm" style={{color:"var(--fg-subtle)"}}>{p.year}</span>
                   <span style={{padding:"0.22rem 0.7rem",borderRadius:"100px",
                     fontFamily:"var(--font-mono)",fontSize:"0.58rem",letterSpacing:"0.1em",textTransform:"uppercase",
@@ -128,13 +130,13 @@ function Card({project:p,index,moved}:{project:(typeof projects)[0];index:number
               </div>
               {/* P/A/I + footer */}
               <div>
-                <div style={{display:"flex",flexDirection:"column",gap:"0.75rem",marginBottom:"1.25rem"}}>
+                <div style={{display:"flex",flexDirection:"column",gap:"1rem",marginBottom:"1.25rem"}}>
                   {([["Problem",p.problem],["Approach",p.approach],["Impact",p.impact]] as const).map(([lbl,val])=>(
                     <div key={lbl}>
                       <p style={{fontFamily:"var(--font-mono)",fontSize:"0.56rem",letterSpacing:"0.1em",
                         textTransform:"uppercase",color:p.accentColor,opacity:0.75,marginBottom:"3px"}}>{lbl}</p>
                       <p style={{fontFamily:"var(--font-body)",fontSize:"var(--text-sm)",
-                        color:"var(--fg-muted)",lineHeight:1.5}}>{val}</p>
+                        color:"var(--fg-muted)",lineHeight:1.65}}>{val}</p>
                     </div>
                   ))}
                 </div>

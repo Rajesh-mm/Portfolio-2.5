@@ -69,8 +69,7 @@ export default function Hero() {
       }}
     >
 
-      <HeroSphere heroRef={heroRef} />
-      
+            {/* <HeroSphere/> */}
       {/* Layer 1: grid lines — slowest */}
       <motion.div
         aria-hidden="true"
