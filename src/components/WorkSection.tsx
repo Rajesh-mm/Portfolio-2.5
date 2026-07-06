@@ -45,17 +45,41 @@ export default function WorkSection() {
         </div>
       </motion.div>
 
-      <div ref={strip} className="h-scroll" role="list" aria-label="Project cards"
-        onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}
-        style={{overflowX:"auto", overflowY:"hidden",paddingLeft: "var(--page-x)", paddingRight: "35vw", paddingInline:"var(--page-x)",paddingBlock:"16px",cursor:drag?"grabbing":"grab",userSelect:"none"}}>
-        <div className="container">
-            <div className="container" style={{display:"flex",gap:"1rem",width:"max-content",alignItems:"stretch"}}>
+      <div ref={strip}
+  className="h-scroll"
+  role="list"
+  aria-label="Project cards"
+  onPointerDown={onDown}
+  onPointerMove={onMove}
+  onPointerUp={onUp}
+  onPointerLeave={onUp}
+  style={{
+    overflowX: "auto",
+    overflowY: "hidden",
+    scrollSnapType: "x proximity",
+    paddingBlock: "16px",
+    cursor: drag ? "grabbing" : "grab",
+    userSelect: "none"
+  }}>
+
+            <div style={{
+      display: "flex",
+      gap: "1rem",
+      width: "max-content",
+      alignItems: "stretch",
+
+      /* alignment with About section */
+      paddingLeft: "max(var(--page-x), calc((100vw - var(--max-w)) / 2))",
+
+      /* room for last card */
+      paddingRight: "15vw",
+    }}>
           {projects.map((p,i)=><Card key={p.slug} project={p} index={i} moved={moved}/>)}
           {/* End tile */}
           <motion.div role="listitem"
             initial={{opacity:0,y:24}} whileInView={{opacity:1,y:0}}
             viewport={{once:true}} transition={{duration:0.5,delay:0.35,ease:EASE}}
-            style={{flexShrink:0,width:"clamp(340px,26vw,420px)",height:"clamp(500px,52vw,560px)",
+            style={{flexShrink:0,width:"clamp(300px,24vw,480px)",height:"clamp(540px,52vw,560px)",
               display:"flex",alignItems:"center",justifyContent:"center",borderRadius:"1.25rem",
               border:"1px dashed var(--border-h)",transition:"border-color var(--dur-theme) ease",scrollSnapAlign:"center"}}>
             <Link href="/work" data-hover
@@ -69,7 +93,7 @@ export default function WorkSection() {
             </Link>
           </motion.div>
         </div>
-        </div>
+
       </div>
       <style>{`.all-arr:hover{transform:scale(1.1)}`}</style>
     </section>
@@ -81,7 +105,7 @@ function Card({project:p,index,moved}:{project:(typeof projects)[0];index:number
   return (
     /* Layout layer: owns dimensions + isolation. Never transformed. */
     <article role="listitem"
-      style={{flexShrink:0,width:"clamp(340px,26vw,460px)",height:"clamp(500px,52vw,560px)",
+      style={{flexShrink:0,width:"clamp(300px,24vw,480px)",height:"clamp(500px,52vw,560px)",
         scrollSnapAlign:"center",isolation:"isolate",position:"relative"}}>
       {/* Entrance layer: whileInView only — separate from hover */}
       <motion.div initial={{opacity:0,y:32}} whileInView={{opacity:1,y:0}}
