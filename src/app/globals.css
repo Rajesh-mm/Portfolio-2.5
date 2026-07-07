@@ -299,7 +299,11 @@ a, button { color: inherit; text-decoration: none; cursor: none; }
    LAYOUT HELPERS
    ═══════════════════════════════════════════════════════════════ */
 .section   { padding: var(--section-y) var(--page-x); }
-.container { max-width: var(--max-w); margin-inline: auto; }
+.container{
+    max-width:var(--max-w);
+    margin-inline:auto;
+    padding-inline:clamp(24px,4vw,64px);
+}
 .divider   {
   border-top: 1px solid var(--border); margin-inline: var(--page-x);
   transition: border-color var(--dur-theme) ease;
@@ -389,14 +393,36 @@ a, button { color: inherit; text-decoration: none; cursor: none; }
    overflow-x:auto forces overflow-y:auto per CSS spec.
    padding-block gives shadow render room inside that clip.
    ═══════════════════════════════════════════════════════════════ */
-.h-scroll{
-    position:sticky;
-    top:0;
-    height:100vh;
+
+.work-track{
     display:flex;
-    align-items:center;
-    overflow:hidden;
+    gap:1rem;
+
+    padding-left:90px;
+    padding-right:90px;
 }
+
+.h-scroll{
+    position: relative;
+    overflow: hidden;
+
+    -webkit-mask-image: linear-gradient(
+        to right,
+        transparent 0%,
+        black 5%,
+        black 95%,
+        transparent 100%
+    );
+
+    mask-image: linear-gradient(
+        to right,
+        transparent 0%,
+        black 5%,
+        black 95%,
+        transparent 100%
+    );
+}
+
 .h-scroll::-webkit-scrollbar { display: none; }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -482,10 +508,10 @@ img { image-rendering: -webkit-optimize-contrast; }
   }
 }
 
-.pin-wrap{
 
-    height:220vh;
-
-    position:relative;
-
+.work-sticky{
+    height:100vh;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
 }

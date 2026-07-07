@@ -3,88 +3,91 @@ import { useRef, useState, useCallback, useLayoutEffect } from "react";
 import { motion, useScroll, useTransform } from "framer-motion";
 import Link from "next/link";
 import { projects } from "@/data/projects";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+
+gsap.registerPlugin(ScrollTrigger);
+
 
 const EASE:[number,number,number,number] = [0.22,1,0.36,1];
 const DUR = 0.42;
 
 export default function WorkSection() {
-  const sRef  = useRef<HTMLDivElement>(null);
-  const strip = useRef<HTMLDivElement>(null);
-  const track = useRef<HTMLDivElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
+  const clipRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
   const [drag,setDrag]   = useState(false);
   const [sx,  setSx]     = useState(0);
   const [ss,  setSs]     = useState(0);
   const [moved,setMoved] = useState(false);
 
-const { scrollYProgress } = useScroll({
-    target: sRef,
-    offset: ["start start","end end"]
-});
 
-const [maxScroll, setMaxScroll] = useState(0);
-
-useLayoutEffect(() => {
-
-    const calc = () => {
-
-        if (!track.current || !strip.current) return;
-
-        setMaxScroll(
-            track.current.scrollWidth -
-            strip.current.clientWidth
-        );
-
-    };
-
-    calc();
-
-    window.addEventListener("resize", calc);
-
-    return () => window.removeEventListener("resize", calc);
-
-}, []);
-
-const x = useTransform(
-    scrollYProgress,
-    [0,1],
-    [0,-maxScroll]
-);
-
-  const hY = useTransform(scrollYProgress,[0,0.35],[36,0]);
-  const hO = useTransform(scrollYProgress,[0,0.28],[0,1]);
 
   const onDown = useCallback((e:React.PointerEvent)=>{
-    if(!strip.current) return;
-    setDrag(true); setMoved(false); setSx(e.clientX); setSs(strip.current.scrollLeft);
-    strip.current.setPointerCapture(e.pointerId);
+    if(!clipRef.current) return;
+    setDrag(true); setMoved(false); setSx(e.clientX); setSs(clipRef.current.scrollLeft);
+    clipRef.current.setPointerCapture(e.pointerId);
   },[]);
   const onMove = useCallback((e:React.PointerEvent)=>{
-    if(!drag||!strip.current) return;
+    if(!drag||!clipRef.current) return;
     const d=sx-e.clientX; if(Math.abs(d)>4) setMoved(true);
-    strip.current.scrollLeft=ss+d*4;
+    clipRef.current.scrollLeft=ss+d*4;
   },[drag,sx,ss]);
   const onUp = useCallback(()=>setDrag(false),[]);
 
+useLayoutEffect(() => {
+  if (!sectionRef.current || !clipRef.current || !trackRef.current) return;
 
+  const ctx = gsap.context(() => {
+
+    const getDistance = () => {
+  const distance =
+    trackRef.current!.scrollWidth -
+    clipRef.current!.clientWidth;
+
+  return distance;
+};
+
+    gsap.to(trackRef.current, {
+      x: () => -getDistance(),
+      ease: "none",
+
+      scrollTrigger: {
+        trigger: sectionRef.current,
+        start: "top top",
+        end: () => `+=${getDistance()}`,
+        scrub: 1,
+        pin: true,
+        anticipatePin: 1,
+        invalidateOnRefresh: true,
+        // markers: true,
+      },
+    });
+
+  }, sectionRef);
+
+  return () => ctx.revert();
+
+}, []);
 
   return (
-    <section ref={sRef} id="work" aria-label="Selected work"
-      style={{background:"var(--bg)",paddingBlock:"var(--section-y)",transition:"background var(--dur-theme) ease"}}>
-      <motion.div style={{y:hY,opacity:hO}} className="container">
+    <section ref={sectionRef} id="work" aria-label="Selected work"
+      style={{background:"var(--bg)", transition:"background var(--dur-theme) ease"}}>
+
+      <div className="work-sticky">
+        <div className="container">
         <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",
           flexWrap:"wrap",gap:"1rem",marginBottom:"clamp(3rem,6vw,5rem)"}}>
           <div>
             <p className="label" style={{color:"var(--accent)",marginBottom:"0.75rem",transition:"color var(--dur-theme) ease"}}>Selected work</p>
             <h2 className="display-lg" style={{color:"var(--fg)"}}>Case studies</h2>
           </div>
-          <p className="label-sm" style={{color:"var(--fg-ghost)",marginBottom:"0.4rem"}} aria-hidden="true">Drag to explore →</p>
         </div>
-      </motion.div>
+      </div>
 
       <div className="container">
 
-        <div className="pin-wrap">
-            <div ref={strip}
+      <div ref={clipRef}
                   className="h-scroll"
                   role="list"
                   aria-label="Project cards"
@@ -103,13 +106,12 @@ const x = useTransform(
                     userSelect: "none"
                   }}>
 
-            <motion.div style={{
-              x,
+            <div ref={trackRef} style={{
               display:"flex",
               gap:"1rem",
               width:"max-content",
               alignItems:"stretch",
-              paddingRight:"500px"
+              paddingRight:"0px"
             }}>
           {projects.map((p,i)=><Card key={p.slug} project={p} index={i} moved={moved}/>)}
           {/* End tile */}
@@ -129,17 +131,19 @@ const x = useTransform(
               <span className="label-sm" style={{color:"var(--fg-subtle)"}}>All projects</span>
             </Link>
           </motion.div>
-        </motion.div>
-
-      </div>
         </div>
 
+      </div>
+
+      </div>
       </div>
 
       <style>{`.all-arr:hover{transform:scale(1.1)}`}</style>
     </section>
   );
 }
+
+
 
 function Card({project:p,index,moved}:{project:(typeof projects)[0];index:number;moved:boolean}) {
   const [hov,setHov] = useState(false);
