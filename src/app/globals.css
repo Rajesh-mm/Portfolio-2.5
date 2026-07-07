@@ -389,9 +389,13 @@ a, button { color: inherit; text-decoration: none; cursor: none; }
    overflow-x:auto forces overflow-y:auto per CSS spec.
    padding-block gives shadow render room inside that clip.
    ═══════════════════════════════════════════════════════════════ */
-.h-scroll {
-  overflow-x: auto; -ms-overflow-style: none; scrollbar-width: none;
-  scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch;
+.h-scroll{
+    position:sticky;
+    top:0;
+    height:100vh;
+    display:flex;
+    align-items:center;
+    overflow:hidden;
 }
 .h-scroll::-webkit-scrollbar { display: none; }
 
@@ -476,4 +480,12 @@ img { image-rendering: -webkit-optimize-contrast; }
   *::after {
     cursor: none !important;
   }
+}
+
+.pin-wrap{
+
+    height:220vh;
+
+    position:relative;
+
 }

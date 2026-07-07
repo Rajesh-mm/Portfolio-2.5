@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useLayoutEffect } from "react";
 import { motion, useScroll, useTransform } from "framer-motion";
 import Link from "next/link";
 import { projects } from "@/data/projects";
@@ -10,12 +10,46 @@ const DUR = 0.42;
 export default function WorkSection() {
   const sRef  = useRef<HTMLDivElement>(null);
   const strip = useRef<HTMLDivElement>(null);
+  const track = useRef<HTMLDivElement>(null);
   const [drag,setDrag]   = useState(false);
   const [sx,  setSx]     = useState(0);
   const [ss,  setSs]     = useState(0);
   const [moved,setMoved] = useState(false);
 
-  const {scrollYProgress} = useScroll({target:sRef,offset:["start end","end start"]});
+const { scrollYProgress } = useScroll({
+    target: sRef,
+    offset: ["start start","end end"]
+});
+
+const [maxScroll, setMaxScroll] = useState(0);
+
+useLayoutEffect(() => {
+
+    const calc = () => {
+
+        if (!track.current || !strip.current) return;
+
+        setMaxScroll(
+            track.current.scrollWidth -
+            strip.current.clientWidth
+        );
+
+    };
+
+    calc();
+
+    window.addEventListener("resize", calc);
+
+    return () => window.removeEventListener("resize", calc);
+
+}, []);
+
+const x = useTransform(
+    scrollYProgress,
+    [0,1],
+    [0,-maxScroll]
+);
+
   const hY = useTransform(scrollYProgress,[0,0.35],[36,0]);
   const hO = useTransform(scrollYProgress,[0,0.28],[0,1]);
 
@@ -27,9 +61,11 @@ export default function WorkSection() {
   const onMove = useCallback((e:React.PointerEvent)=>{
     if(!drag||!strip.current) return;
     const d=sx-e.clientX; if(Math.abs(d)>4) setMoved(true);
-    strip.current.scrollLeft=ss+d*1.6;
+    strip.current.scrollLeft=ss+d*4;
   },[drag,sx,ss]);
   const onUp = useCallback(()=>setDrag(false),[]);
+
+
 
   return (
     <section ref={sRef} id="work" aria-label="Selected work"
@@ -45,35 +81,36 @@ export default function WorkSection() {
         </div>
       </motion.div>
 
-      <div ref={strip}
-  className="h-scroll"
-  role="list"
-  aria-label="Project cards"
-  onPointerDown={onDown}
-  onPointerMove={onMove}
-  onPointerUp={onUp}
-  onPointerLeave={onUp}
-  style={{
-    overflowX: "auto",
-    overflowY: "hidden",
-    scrollSnapType: "x proximity",
-    paddingBlock: "16px",
-    cursor: drag ? "grabbing" : "grab",
-    userSelect: "none"
-  }}>
+      <div className="container">
 
-            <div style={{
-      display: "flex",
-      gap: "1rem",
-      width: "max-content",
-      alignItems: "stretch",
+        <div className="pin-wrap">
+            <div ref={strip}
+                  className="h-scroll"
+                  role="list"
+                  aria-label="Project cards"
+                  // onPointerDown={onDown}
+                  // onPointerMove={onMove}
+                  // onPointerUp={onUp}
+                  onPointerLeave={onUp}
+                  style={{
+                    overflowX: "auto",
+                    overflowY: "hidden",
+                    scrollbarWidth: "none",
+                    msOverflowStyle: "none",
+                    scrollSnapType: "x proximity",
+                    paddingBlock: "16px",
+                    cursor: drag ? "grabbing" : "grab",
+                    userSelect: "none"
+                  }}>
 
-      /* alignment with About section */
-      paddingLeft: "max(var(--page-x), calc((100vw - var(--max-w)) / 2))",
-
-      /* room for last card */
-      paddingRight: "15vw",
-    }}>
+            <motion.div style={{
+              x,
+              display:"flex",
+              gap:"1rem",
+              width:"max-content",
+              alignItems:"stretch",
+              paddingRight:"500px"
+            }}>
           {projects.map((p,i)=><Card key={p.slug} project={p} index={i} moved={moved}/>)}
           {/* End tile */}
           <motion.div role="listitem"
@@ -92,9 +129,13 @@ export default function WorkSection() {
               <span className="label-sm" style={{color:"var(--fg-subtle)"}}>All projects</span>
             </Link>
           </motion.div>
+        </motion.div>
+
+      </div>
         </div>
 
       </div>
+
       <style>{`.all-arr:hover{transform:scale(1.1)}`}</style>
     </section>
   );
